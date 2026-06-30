@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+~$*.xlsx
+
+# 业务数据不进版本库，只推代码。服务器上的raw_data/output是运行时产生和
+# 累积的实际库存数据，跟代码分开管理，不提交、不推送。
+raw_data/
+output/
+files/
+*.csv
+*.xlsx
+*.docx
