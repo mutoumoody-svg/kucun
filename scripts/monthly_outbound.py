@@ -84,8 +84,11 @@ def cumulative_month_outbound(as_of_date: str) -> pd.DataFrame:
     start_date, start_qty = available[0]
     end_date, end_qty = available[-1]
 
-    all_skus = set(start_qty.keys()) | set(end_qty.keys())
-    outbound = {sku: start_qty.get(sku, 0) - end_qty.get(sku, 0) for sku in all_skus}
+    # 月初快照里压根没有这个SKU的，说明这个SKU是月中才新增/才开始有记录的，
+    # 没有真实的月初基准库存，不能拿0去硬算（那样会显示出一个虚假的"补货"负数），
+    # 这种情况直接不给出累计出库数量，留空
+    common_skus = set(start_qty.keys()) & set(end_qty.keys())
+    outbound = {sku: start_qty[sku] - end_qty[sku] for sku in common_skus}
 
     period = f"{start_date} ~ {end_date}"
     return pd.DataFrame(
