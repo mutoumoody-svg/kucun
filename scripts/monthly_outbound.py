@@ -54,7 +54,10 @@ def _load_260624_qty(path: Path) -> dict:
 
 
 SNAPSHOT_SOURCES = [
-    ("2026-06-01", lambda: _load_erp_qty(RAW_DIR / "副本库存6.1(1).xlsx", ["库存6.1", "蜂蜜和苹果醋", "sttoke"])),
+    # 注意：副本库存6.1(1).xlsx里"库存6.1"sheet本身就是总表（352条），
+    # "蜂蜜和苹果醋"(46条)和"sttoke"(306条)只是从总表里又单独拆出来的子集，
+    # 全部都包含在"库存6.1"里——只能读"库存6.1"一个sheet，不然会重复计算。
+    ("2026-06-01", lambda: _load_erp_qty(RAW_DIR / "副本库存6.1(1).xlsx", ["库存6.1"])),
     ("2026-06-08", lambda: _load_standard_qty(RAW_DIR / "副本20260608库存.xlsx", ["慕咖", "STTOKE", "食品"])),
     ("2026-06-22", lambda: _load_standard_qty(RAW_DIR / "副本20260622库存.xlsx", ["慕咖", "STTOKE", "食品"])),
     ("2026-06-24", lambda: _load_260624_qty(RAW_DIR / "260624原始数据.xlsx")),

@@ -76,67 +76,48 @@ def _parse_standard_file(path: Path, date: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _parse_erp_file(path: Path, date: str) -> pd.DataFrame:
+def _parse_erp_sheet(path: Path, sheet: str, default_category: str | None) -> pd.DataFrame:
+    df = pd.read_excel(path, sheet_name=sheet)
+    df = df.dropna(subset=["商家编码"])
+    if "次品标记" in df.columns:
+        df = df[df["次品标记"] != 1]
+    grouped = df.groupby(["商家编码", "货品名称"], as_index=False)["正常库存"].sum()
     rows = []
+    for _, r in grouped.iterrows():
+        sku = str(r["商家编码"]).strip()
+        rows.append(
+            {
+                "category": default_category or _category_from_sku(sku),
+                "sku": sku,
+                "name": r["货品名称"],
+                "qty": r["正常库存"],
+                "turnover_months": pd.NA,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _parse_erp_file(path: Path, date: str) -> pd.DataFrame:
     xls = pd.ExcelFile(path)
 
+    # "库存6.1"如果存在，是包含全部品类的总表，"蜂蜜和苹果醋"/"sttoke"只是从总表
+    # 里又单独拆出来的子集——三个sheet都读会重复计算，所以"库存6.1"存在时只读它，
+    # 不存在时才退回去读拆分出来的"蜂蜜和苹果醋"+"sttoke"（比如6/29之后的格式只有
+    # 拆分sheet，没有汇总sheet）
     if "库存6.1" in xls.sheet_names:
-        df = pd.read_excel(path, sheet_name="库存6.1")
-        df = df.dropna(subset=["商家编码"])
-        if "次品标记" in df.columns:
-            df = df[df["次品标记"] != 1]
-        grouped = df.groupby(["商家编码", "货品名称"], as_index=False)["正常库存"].sum()
-        for _, r in grouped.iterrows():
-            sku = str(r["商家编码"]).strip()
-            rows.append(
-                {
-                    "date": date,
-                    "category": _category_from_sku(sku),
-                    "sku": sku,
-                    "name": r["货品名称"],
-                    "qty": r["正常库存"],
-                    "turnover_months": pd.NA,
-                }
-            )
+        df = _parse_erp_sheet(path, "库存6.1", default_category=None)
+    else:
+        frames = []
+        if "蜂蜜和苹果醋" in xls.sheet_names:
+            frames.append(_parse_erp_sheet(path, "蜂蜜和苹果醋", default_category="食品"))
+        if "sttoke" in xls.sheet_names:
+            frames.append(_parse_erp_sheet(path, "sttoke", default_category=None))
+        df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-    if "蜂蜜和苹果醋" in xls.sheet_names:
-        df = pd.read_excel(path, sheet_name="蜂蜜和苹果醋")
-        df = df.dropna(subset=["商家编码"])
-        if "次品标记" in df.columns:
-            df = df[df["次品标记"] != 1]
-        grouped = df.groupby(["商家编码", "货品名称"], as_index=False)["正常库存"].sum()
-        for _, r in grouped.iterrows():
-            rows.append(
-                {
-                    "date": date,
-                    "category": "食品",
-                    "sku": str(r["商家编码"]).strip(),
-                    "name": r["货品名称"],
-                    "qty": r["正常库存"],
-                    "turnover_months": pd.NA,
-                }
-            )
-
-    if "sttoke" in xls.sheet_names:
-        df = pd.read_excel(path, sheet_name="sttoke")
-        df = df.dropna(subset=["商家编码"])
-        if "次品标记" in df.columns:
-            df = df[df["次品标记"] != 1]
-        grouped = df.groupby(["商家编码", "货品名称"], as_index=False)["正常库存"].sum()
-        for _, r in grouped.iterrows():
-            sku = str(r["商家编码"]).strip()
-            rows.append(
-                {
-                    "date": date,
-                    "category": _category_from_sku(sku),
-                    "sku": sku,
-                    "name": r["货品名称"],
-                    "qty": r["正常库存"],
-                    "turnover_months": pd.NA,
-                }
-            )
-
-    return pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["date"] = date
+    return df[["date", "category", "sku", "name", "qty", "turnover_months"]]
 
 
 def _is_erp_file(path: Path) -> bool:
