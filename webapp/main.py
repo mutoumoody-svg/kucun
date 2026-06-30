@@ -116,9 +116,21 @@ def _table_html(df: pd.DataFrame, columns: list[str], max_rows: int = 12, status
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table>{more}"
 
 
+QTY_BRANDS = [("STTOKE", "STTOKE"), ("慕咖", "慕咖"), ("食品", "巴恩天然")]
+
+
 def build_result_html(tables: dict, entry: tuple | None, download_token: str) -> str:
     goods = tables["goods"]
     packaging = tables["packaging"]
+
+    qty_boxes = ""
+    if "汇总" in goods.columns:
+        for brand_key, label in QTY_BRANDS:
+            total_qty = int(goods.loc[goods["品牌"] == brand_key, "汇总"].sum())
+            qty_boxes += (
+                f'<div class="stat-box"><div class="num">{total_qty:,}</div>'
+                f'<div class="label">{_esc(label)} 总库存数量</div></div>'
+            )
 
     goods_counts = goods["品牌"].value_counts()
     pkg_counts = packaging["品牌"].value_counts()
@@ -178,6 +190,9 @@ def build_result_html(tables: dict, entry: tuple | None, download_token: str) ->
     <div class="card">
       <div class="meta">{meta_line}</div>
       <a class="download" href="/download/{download_token}?name={download_name}">下载完整整理结果（含所有品牌sheet）</a>
+
+      <h2>总库存数量统计</h2>
+      <div class="stat-grid">{qty_boxes}</div>
 
       <h2>品牌数量概览</h2>
       <div class="stat-grid">{stat_boxes}</div>
