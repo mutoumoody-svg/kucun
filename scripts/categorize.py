@@ -51,30 +51,18 @@ STATUS_COLORS = {
 # 已知改版后货号变化（旧批次记录用的SKU -> 当前库存里的新SKU）
 SKU_ALIAS = {"BNMGO550-250": "NEWBNMGO550-250"}
 
-# 产品名称修正表（SKU -> 正确名称）：源文件里名称不一致时以此为准
+# 产品名称修正表（SKU -> 正确名称）：仅用于ERP文件里名称本身就错的情况。
+# 大多数名称会由 name_registry.json 从上传的ERP文件里自动维护，不要在这里重复。
 NAME_OVERRIDE = {
-    # 盈旋杯单只7OZ
+    # 盈旋杯单只7OZ（ERP文件里缺少STTOKE前缀）
     "S7SCUPHSGR": "STTOKE盈旋杯【单只】莫吉托薄荷7OZ",
     "S7SCUPHSPK": "STTOKE盈旋杯【单只】覆盆子玫瑰7OZ",
     "S7SCUPHSBM": "STTOKE盈旋杯【单只】玛格丽特蓝7OZ",
     "S7SCUPHSYL": "STTOKE盈旋杯【单只】含羞草柔黄7OZ",
-    # 夜光海洋系列（杯）
-    "STTOKELOSO12": "STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 12OZ密封旋盖】",
-    "STTOKELOSS12": "STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 12OZ密封旋盖】",
-    "STTOKELOSO16": "STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 16OZ密封旋盖】",
-    "STTOKELOSS16": "STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 16OZ密封旋盖】",
-    "STTOKELOSO20": "STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 20OZ吸管杯】",
-    "STTOKELOSS20": "STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 20OZ吸管杯】",
-    # 夜光海洋系列（标签/包装）
-    "STTOKELOSS12BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款鲨鱼 12OZ密封旋盖标签",
-    "STTOKELOSS16BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款鲨鱼 16OZ密封旋盖标签",
-    "STTOKELOSS20BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款鲨鱼 20OZ吸管杯标签",
-    "STTOKELOSO12BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款章鱼 12OZ密封旋盖标签",
-    "STTOKELOSO16BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款章鱼 16OZ密封旋盖标签",
-    "STTOKELOSO20BQ": "STTOKE不锈钢随行杯夜光海洋系列限定款章鱼 20OZ吸管杯标签",
-    # 咖啡随行杯20OZ
-    "STTOKELESBP20": "STTOKE不锈钢咖啡随行杯【粉玫酿 20OZ 吸管杯】",
-    "STTOKELESIG20": "STTOKE不锈钢咖啡随行杯【绿橄榄 20OZ 吸管杯】",
+    "S7SCUPHSBL": "STTOKE盈旋杯【单只】朗姆经典黑7OZ",
+    "STTOKECG7":  "STTOKE盈旋杯 【莫尼耶香槟7OZ】",
+    "STTEWHI12":  "STTOKE不锈钢咖啡随行杯【时尚白12OZ】",
+    "STTESwirl Cup": "STTOKE家用杯（SET）",
 }
 
 # ============================================================
