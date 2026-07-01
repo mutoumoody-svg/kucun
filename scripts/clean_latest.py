@@ -230,13 +230,10 @@ def load_260624_style(path: Path) -> pd.DataFrame:
     if "name" not in result.columns:
         result["name"] = ""
 
-    # 用文件里的名称更新注册表，再用注册表补全空缺名称
-    name_pairs = {r["sku"]: r["name"] for _, r in result[["sku", "name"]].iterrows() if r["name"]}
-    if name_pairs:
-        update_name_registry(name_pairs)
+    # 260624格式只读注册表补全名称，不写入（名称权威来源只有ERP文件）
     name_reg = load_name_registry()
     result["name"] = result.apply(
-        lambda r: name_reg.get(r["sku"], r["name"]) if not r["name"] else r["name"], axis=1
+        lambda r: name_reg.get(r["sku"], r["name"]), axis=1
     )
     return result[["sku", "name", "warehouse", "qty"]]
 
