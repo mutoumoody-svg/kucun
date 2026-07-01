@@ -301,7 +301,35 @@ def load_expiry_fallback() -> pd.DataFrame:
     ).reset_index()
 
 
+def _ensure_name_registry() -> None:
+    """首次运行或注册表为空时，从所有历史ERP文件里批量提取名称写入注册表。"""
+    if NAME_REGISTRY_PATH.exists() and load_name_registry():
+        return
+    registry = load_registry()
+    for date, fmt, filename, sheets in registry:
+        if fmt != "erp_style" or not sheets:
+            continue
+        path = RAW_DIR / filename
+        if not path.exists():
+            continue
+        try:
+            frames = []
+            for sheet in sheets:
+                d = pd.read_excel(path, sheet_name=sheet)
+                if "次品标记" in d.columns:
+                    d = d[d["次品标记"] != 1]
+                d["商家编码"] = d["商家编码"].replace(SKU_ALIAS)
+                frames.append(d)
+            raw = pd.concat(frames, ignore_index=True)
+            long_df = raw.rename(columns={"商家编码": "sku", "货品名称": "name"})[["sku", "name"]]
+            pairs = {r["sku"]: r["name"] for _, r in long_df.iterrows() if r["name"]}
+            update_name_registry(pairs)
+        except Exception:
+            pass
+
+
 def clean() -> dict:
+    _ensure_name_registry()
     snapshot_date, fmt, path, sheets = pick_latest_snapshot()
 
     if fmt == "260624_style":
