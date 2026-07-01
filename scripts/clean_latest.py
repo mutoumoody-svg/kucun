@@ -50,6 +50,27 @@ from turnover_lookup import load_latest_turnover
 RAW_DIR = Path(__file__).resolve().parent.parent / "raw_data"
 OUT_PATH = Path(__file__).resolve().parent.parent / "output" / "库存整理.xlsx"
 REGISTRY_PATH = RAW_DIR / "snapshot_registry.json"
+NAME_REGISTRY_PATH = RAW_DIR / "name_registry.json"
+
+
+def load_name_registry() -> dict:
+    """加载持久化的 SKU->名称 注册表"""
+    if not NAME_REGISTRY_PATH.exists():
+        return {}
+    with open(NAME_REGISTRY_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_name_registry(registry: dict) -> None:
+    with open(NAME_REGISTRY_PATH, "w", encoding="utf-8") as f:
+        json.dump(registry, f, ensure_ascii=False, indent=2)
+
+
+def update_name_registry(sku_name_pairs: dict) -> None:
+    """用新读到的 SKU->名称 更新注册表（新名称覆盖旧名称）"""
+    registry = load_name_registry()
+    registry.update({k: v for k, v in sku_name_pairs.items() if v and str(v).strip()})
+    save_name_registry(registry)
 
 # 已知保质期来源（用于补全260624_style快照没有的保质期字段），按时间顺序，
 # 同一SKU在多个来源里都出现时优先用较新来源
@@ -203,9 +224,21 @@ def load_260624_style(path: Path) -> pd.DataFrame:
     """返回统一长表：sku, name, warehouse, qty（不含原生保质期）"""
     df = pd.read_excel(path, sheet_name="Sheet1")
     df["货品编号"] = df["货品编号"].replace(SKU_ALIAS)
-    return df.rename(
+    result = df.rename(
         columns={"货品编号": "sku", "货品名称": "name", "仓库": "warehouse", "库存量": "qty"}
-    )[["sku", "name", "warehouse", "qty"]]
+    )
+    if "name" not in result.columns:
+        result["name"] = ""
+
+    # 用文件里的名称更新注册表，再用注册表补全空缺名称
+    name_pairs = {r["sku"]: r["name"] for _, r in result[["sku", "name"]].iterrows() if r["name"]}
+    if name_pairs:
+        update_name_registry(name_pairs)
+    name_reg = load_name_registry()
+    result["name"] = result.apply(
+        lambda r: name_reg.get(r["sku"], r["name"]) if not r["name"] else r["name"], axis=1
+    )
+    return result[["sku", "name", "warehouse", "qty"]]
 
 
 def load_erp_style(path: Path, sheets: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -222,6 +255,10 @@ def load_erp_style(path: Path, sheets: list[str]) -> tuple[pd.DataFrame, pd.Data
     long_df = raw.rename(
         columns={"商家编码": "sku", "货品名称": "name", "仓库": "warehouse", "正常库存": "qty"}
     )[["sku", "name", "warehouse", "qty"]]
+
+    # 每次读ERP文件都把最新的SKU->名称写入注册表
+    name_pairs = dict(zip(long_df["sku"], long_df["name"]))
+    update_name_registry(name_pairs)
 
     has_real_expiry = raw["生产日期"].astype(str) != "0000-00-00 00:00:00"
     expiry_rows = raw[has_real_expiry].sort_values(["商家编码", "距离到期天数"])
@@ -281,8 +318,11 @@ def clean() -> dict:
     ).reset_index()
     wide["汇总"] = wide[warehouses].sum(axis=1)
     wide = wide.rename(columns={"sku": "货品编号", "name": "货品名称"})
+    # 先用ERP注册表里的最新名称补全/更新，再用NAME_OVERRIDE手动修正（优先级最高）
+    name_reg = load_name_registry()
     wide["货品名称"] = wide.apply(
-        lambda r: NAME_OVERRIDE.get(r["货品编号"], r["货品名称"]), axis=1
+        lambda r: NAME_OVERRIDE.get(r["货品编号"],
+                                    name_reg.get(r["货品编号"], r["货品名称"])), axis=1
     )
 
     wide["类型"] = wide["货品名称"].apply(classify_material)
