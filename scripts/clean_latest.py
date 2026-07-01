@@ -34,14 +34,14 @@ from openpyxl.utils import get_column_letter
 from categorize import (
     BRAND_ORDER,
     MOODY_TOP_ITEMS,
+    MOODY_TOP_ITEMS_SKU,
     SKU_ALIAS,
     STATUS_COLORS,
     classify_brand,
     classify_material,
     extract_group_keyword,
-    food_sort_key,
     group_sort_key,
-    moody_sort_key,
+    sku_sort_key,
 )
 from monthly_outbound import cumulative_month_outbound
 from turnover_lookup import load_latest_turnover
@@ -296,20 +296,15 @@ def clean() -> dict:
     wide = wide.merge(outbound, left_on="货品编号", right_on="sku", how="left").drop(columns=["sku"])
 
     def _sort_weight(r) -> int:
-        if r["品牌"] == "食品":
-            return food_sort_key(r["货品名称"])
-        if r["品牌"] == "慕咖":
-            if r["货品名称"] in MOODY_TOP_ITEMS:
-                return MOODY_TOP_ITEMS.index(r["货品名称"])
-            return moody_sort_key(r["货品名称"])
-        return group_sort_key(r["规格分组"])
+        # 统一按各页面SKU顺序表排序；不在表里的新SKU排到末尾
+        return sku_sort_key(r["货品编号"], r["类型"], r["品牌"])
 
     def reorder(d: pd.DataFrame) -> pd.DataFrame:
         d = d.copy()
         d["_排序权重"] = d.apply(_sort_weight, axis=1)
         d = d.sort_values(
-            ["_排序权重", "规格分组", "距离到期天数_最近批次", "汇总"],
-            ascending=[True, True, True, False],
+            ["_排序权重", "距离到期天数_最近批次", "汇总"],
+            ascending=[True, True, False],
             na_position="last",
         ).drop(columns=["_排序权重"])
         cols = ["货品名称", "规格分组"] + [c for c in d.columns if c not in ("货品名称", "规格分组")]
@@ -360,8 +355,8 @@ def build_workbook(tables: dict):
         ws = wb.create_sheet(f"{idx:02d}_商品-{brand}")
         cols = _brand_cols(brand, warehouses)
         if brand == "慕咖":
-            top = sub[sub["货品名称"].isin(MOODY_TOP_ITEMS)]
-            rest = sub[~sub["货品名称"].isin(MOODY_TOP_ITEMS)]
+            top = sub[sub["货品编号"].isin(MOODY_TOP_ITEMS_SKU)]
+            rest = sub[~sub["货品编号"].isin(MOODY_TOP_ITEMS_SKU)]
             _write_df_with_gap(ws, top[cols], rest[cols], gap_rows=2, number_format=qty_fmt)
         else:
             _write_df(ws, sub[cols], number_format=qty_fmt)
