@@ -17,6 +17,7 @@ output/history/{date}.xlsx，左侧栏列出所有归档过的日期，点击可
 import html
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -218,7 +219,8 @@ def build_result_html(tables: dict, entry: tuple | None) -> str:
         {_table_html(low_stock, low_cols, max_rows=12)}
         """
 
-    meta_line = f"快照日期：{snapshot_date}（格式：{tables['format']}）"
+    analyzed_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    meta_line = f"快照日期：{snapshot_date}（格式：{tables['format']}）· 分析时间：{analyzed_at}"
     if entry:
         meta_line = f"刚登记的快照：{_esc(entry[2])}（日期 {entry[0]}） · " + meta_line
 
