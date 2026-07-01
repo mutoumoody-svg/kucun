@@ -346,11 +346,12 @@ def clean() -> dict:
     ).reset_index()
     wide["汇总"] = wide[warehouses].sum(axis=1)
     wide = wide.rename(columns={"sku": "货品编号", "name": "货品名称"})
-    # 先用ERP注册表里的最新名称补全/更新，再用NAME_OVERRIDE手动修正（优先级最高）
+    # 优先用ERP注册表里的最新名称（上传的ERP文件名字最权威），
+    # 注册表里没有的SKU才用NAME_OVERRIDE补全，再没有就用文件原始名称
     name_reg = load_name_registry()
     wide["货品名称"] = wide.apply(
-        lambda r: NAME_OVERRIDE.get(r["货品编号"],
-                                    name_reg.get(r["货品编号"], r["货品名称"])), axis=1
+        lambda r: name_reg.get(r["货品编号"],
+                               NAME_OVERRIDE.get(r["货品编号"], r["货品名称"])), axis=1
     )
 
     wide["类型"] = wide["货品名称"].apply(classify_material)
