@@ -21,7 +21,7 @@ OUT_PATH = Path(__file__).resolve().parent.parent / "output" / "snapshots_long.c
 STANDARD_SHEETS = {"慕咖": "慕咖", "STTOKE": "STTOKE", "食品": "食品"}
 
 # ERP原始导出sheet名 -> 处理函数在 _parse_erp_file 内分发
-ERP_SHEET_NAMES = {"库存6.1", "蜂蜜和苹果醋", "sttoke"}
+ERP_SHEET_NAMES = {"库存6.1", "蜂蜜和苹果醋", "sttoke", "蜂蜜", "慕咖sttoke"}
 
 # sttoke sheet里按SKU前缀判断品类，发现新前缀时请补充此表
 SKU_PREFIX_CATEGORY = {
@@ -32,9 +32,11 @@ SKU_PREFIX_CATEGORY = {
 
 
 def _extract_date_from_filename(path: Path) -> str:
-    """从文件名中提取日期，支持两种格式：
+    """从文件名中提取日期，支持三种格式：
     - 8位 YYYYMMDD，例如 副本20260622库存.xlsx -> 2026-06-22
     - 6位 YYMMDD（无世纪前缀），例如 260624原始数据.xlsx -> 2026-06-24
+    - 月.日格式，例如 副本库存6.1(1).xlsx / 副本库存6.29.xlsx -> 2026-06-01 / 2026-06-29
+      （年份取文件修改时间的年份）
     """
     m = re.search(r"(20\d{6})", path.stem)
     if m:
@@ -44,6 +46,13 @@ def _extract_date_from_filename(path: Path) -> str:
     if m:
         d = m.group(1)
         return f"20{d[0:2]}-{d[2:4]}-{d[4:6]}"
+    # 月.日格式：库存6.29、库存6.1(1) 等
+    m = re.search(r"(\d{1,2})\.(\d{1,2})", path.stem)
+    if m:
+        year = datetime.fromtimestamp(path.stat().st_mtime).year
+        month = int(m.group(1))
+        day = int(m.group(2))
+        return f"{year}-{month:02d}-{day:02d}"
     raise ValueError(f"无法从文件名解析日期: {path.name}")
 
 
@@ -108,10 +117,12 @@ def _parse_erp_file(path: Path, date: str) -> pd.DataFrame:
         df = _parse_erp_sheet(path, "库存6.1", default_category=None)
     else:
         frames = []
-        if "蜂蜜和苹果醋" in xls.sheet_names:
-            frames.append(_parse_erp_sheet(path, "蜂蜜和苹果醋", default_category="食品"))
-        if "sttoke" in xls.sheet_names:
-            frames.append(_parse_erp_sheet(path, "sttoke", default_category=None))
+        for food_sheet in ["蜂蜜和苹果醋", "蜂蜜"]:
+            if food_sheet in xls.sheet_names:
+                frames.append(_parse_erp_sheet(path, food_sheet, default_category="食品"))
+        for sttoke_sheet in ["sttoke", "慕咖sttoke"]:
+            if sttoke_sheet in xls.sheet_names:
+                frames.append(_parse_erp_sheet(path, sttoke_sheet, default_category=None))
         df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     if df.empty:

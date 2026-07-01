@@ -470,9 +470,25 @@ def build_workbook(tables: dict):
     wb.save(OUT_PATH)
 
 
+def regenerate_turnover() -> None:
+    """从 raw_data/ 所有历史快照重算周转率，写入 output/data_sku_monthly_turnover.csv。
+    每次上传新快照时自动调用，确保周转数据包含最新历史。"""
+    from extract import extract_all
+    from analyze import build_monthly_sku_table
+
+    long_df = extract_all(RAW_DIR)
+    if long_df.empty:
+        return
+    monthly = build_monthly_sku_table(long_df)
+    out = OUT_PATH.parent / "data_sku_monthly_turnover.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    monthly.to_csv(out, index=False, encoding="utf-8-sig")
+
+
 def run_pipeline() -> dict:
     """跑一遍完整流程（取最新快照->整理->写出Excel），供脚本和网页后端共用。
     返回tables字典，里面附带snapshot_date/format等信息，方便调用方展示状态。"""
+    regenerate_turnover()
     tables = clean()
     build_workbook(tables)
     return tables

@@ -157,6 +157,51 @@ def _table_html(df: pd.DataFrame, columns: list[str], max_rows: int = 12, status
 QTY_BRANDS = [("STTOKE", "STTOKE"), ("慕咖", "慕咖"), ("食品", "巴恩天然")]
 
 
+def _build_turnover_html(goods: pd.DataFrame) -> str:
+    """周转率分析：品牌均值 + 积压商品列表（基于历史多期快照重算，非当月估算）"""
+    if "最新月周转月数" not in goods.columns or goods["最新月周转月数"].isna().all():
+        return ""
+
+    has_data = goods[goods["最新月周转月数"].notna()]
+    if has_data.empty:
+        return ""
+
+    data_month = has_data["周转数据月份"].iloc[0] if "周转数据月份" in has_data.columns else ""
+
+    # 品牌周转均值汇总
+    brand_rows = []
+    for brand, g in has_data.groupby("品牌"):
+        avg_t = g["最新月周转月数"].mean()
+        median_t = g["最新月周转月数"].median()
+        counts = g["库存状态"].value_counts()
+        status_str = "  ".join(
+            f'<span style="background:#{STATUS_COLORS.get(s,"")}; padding:2px 6px; border-radius:3px">'
+            f'{_esc(s)} {int(counts.get(s,0))}</span>'
+            for s in ["快速", "正常", "偏慢", "积压"] if counts.get(s, 0) > 0
+        )
+        brand_rows.append(
+            f"<tr><td>{_esc(brand)}</td><td>{avg_t:.1f}</td><td>{median_t:.1f}</td><td>{status_str}</td></tr>"
+        )
+    brand_table = (
+        "<table><thead><tr><th>品牌</th><th>平均周转月数</th><th>中位周转月数</th><th>状态分布</th></tr></thead>"
+        f"<tbody>{''.join(brand_rows)}</tbody></table>"
+    )
+
+    # 积压商品列表（周转月数 > 6）
+    overstock = has_data[has_data["最新月周转月数"] > 6].sort_values("最新月周转月数", ascending=False)
+    overstock_cols = [c for c in ["货品名称", "货品编号", "品牌", "汇总", "最新月周转月数"] if c in overstock.columns]
+    overstock_html = _table_html(overstock, overstock_cols, max_rows=20)
+
+    month_note = f'（数据月份：{_esc(data_month)}，基于历史多期快照计算）' if data_month else ''
+
+    return f"""
+    <h2>库存周转率分析 {month_note}</h2>
+    {brand_table}
+    <h2>积压预警（周转月数 &gt; 6个月）</h2>
+    {overstock_html}
+    """
+
+
 def build_result_html(tables: dict, entry: tuple | None) -> str:
     goods = tables["goods"]
     packaging = tables["packaging"]
@@ -219,6 +264,8 @@ def build_result_html(tables: dict, entry: tuple | None) -> str:
         {_table_html(low_stock, low_cols, max_rows=12)}
         """
 
+    turnover_html = _build_turnover_html(goods)
+
     analyzed_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     meta_line = f"快照日期：{snapshot_date}（格式：{tables['format']}）· 分析时间：{analyzed_at}"
     if entry:
@@ -239,6 +286,8 @@ def build_result_html(tables: dict, entry: tuple | None) -> str:
 
       <h2>库存状态分布（按品牌）</h2>
       {status_table}
+
+      {turnover_html}
 
       <h2>临期预警（1年内到期，按紧迫度排序）</h2>
       {expiring_html}
