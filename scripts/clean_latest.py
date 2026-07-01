@@ -35,6 +35,7 @@ from categorize import (
     BRAND_ORDER,
     MOODY_TOP_ITEMS,
     MOODY_TOP_ITEMS_SKU,
+    NAME_OVERRIDE,
     SKU_ALIAS,
     STATUS_COLORS,
     classify_brand,
@@ -280,6 +281,9 @@ def clean() -> dict:
     ).reset_index()
     wide["汇总"] = wide[warehouses].sum(axis=1)
     wide = wide.rename(columns={"sku": "货品编号", "name": "货品名称"})
+    wide["货品名称"] = wide.apply(
+        lambda r: NAME_OVERRIDE.get(r["货品编号"], r["货品名称"]), axis=1
+    )
 
     wide["类型"] = wide["货品名称"].apply(classify_material)
     wide["品牌"] = wide["货品名称"].apply(classify_brand)
