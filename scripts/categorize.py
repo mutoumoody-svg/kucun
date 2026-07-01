@@ -54,7 +54,7 @@ SKU_ALIAS = {"BNMGO550-250": "NEWBNMGO550-250"}
 # 产品名称修正表（SKU -> 正确名称）：仅用于ERP文件里名称本身就错的情况。
 # 大多数名称会由 name_registry.json 从上传的ERP文件里自动维护，不要在这里重复。
 NAME_OVERRIDE = {
-    # 盈旋杯单只7OZ（ERP文件里缺少STTOKE前缀）
+    # 盈旋杯单只7OZ
     "S7SCUPHSGR": "STTOKE盈旋杯【单只】莫吉托薄荷7OZ",
     "S7SCUPHSPK": "STTOKE盈旋杯【单只】覆盆子玫瑰7OZ",
     "S7SCUPHSBM": "STTOKE盈旋杯【单只】玛格丽特蓝7OZ",
@@ -63,6 +63,22 @@ NAME_OVERRIDE = {
     "STTOKECG7":  "STTOKE盈旋杯 【莫尼耶香槟7OZ】",
     "STTEWHI12":  "STTOKE不锈钢咖啡随行杯【时尚白12OZ】",
     "STTESwirl Cup": "STTOKE家用杯（SET）",
+    # 夜光海洋系列
+    "STTOKELOSS12": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 12OZ密封旋盖】",
+    "STTOKELOSO12": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 12OZ密封旋盖】",
+    "STTOKELOSS16": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 16OZ密封旋盖】",
+    "STTOKELOSO16": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 16OZ密封旋盖】",
+    "STTOKELOSS20": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【鲨鱼 20OZ吸管杯】",
+    "STTOKELOSO20": "慕咖STTOKE不锈钢随行杯夜光海洋系列限定款【章鱼 20OZ吸管杯】",
+    # 咖啡随行杯20OZ
+    "STTOKELESBP20": "慕咖STTOKE不锈钢咖啡随行杯【粉玫酿 20OZ 吸管杯】",
+    "STTOKELESIG20": "慕咖STTOKE不锈钢咖啡随行杯【绿橄榄 20OZ 吸管杯】",
+    # 分享壶20OZ
+    "STTOKESJHCB": "慕咖STTOKE不锈钢分享壶 20OZ【晨雾白】",
+    "STTOKESJHEG": "慕咖STTOKE不锈钢分享壶 20OZ【暮色灰】",
+    # 吸管套
+    "STTOKESTIG": "慕咖STTOKE 20oz吸管套绿橄榄",
+    "STTOKESTBP": "慕咖STTOKE 20oz吸管套粉玫酿",
 }
 
 # ============================================================
