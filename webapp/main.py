@@ -410,12 +410,11 @@ def build_result_html(tables: dict, entry: tuple | None) -> str:
 
 
 def _save_turnover_json(snapshot_date: str, goods: pd.DataFrame) -> None:
-    """把周转数据存成 JSON，供周转率详情页使用"""
+    """把全部商品存成 JSON，供周转率详情页使用（含无周转数据的商品，显示—）"""
     cols = [c for c in ["货品名称", "货品编号", "类型", "品牌", "汇总", "最新月周转月数", "库存状态", "周转数据月份"] if c in goods.columns]
-    tv = goods[goods["最新月周转月数"].notna()][cols].copy() if "最新月周转月数" in goods.columns else pd.DataFrame(columns=cols)
-    if not tv.empty:
-        tv["最新月周转月数"] = tv["最新月周转月数"].apply(lambda x: int(round(x)) if pd.notna(x) else None)
-        tv["页面分类"] = tv["类型"] + "-" + tv["品牌"]
+    tv = goods[cols].copy()
+    tv["最新月周转月数"] = tv["最新月周转月数"].apply(lambda x: int(round(x)) if pd.notna(x) else None)
+    tv["页面分类"] = tv["类型"] + "-" + tv["品牌"]
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     (HISTORY_DIR / f"{snapshot_date}_turnover.json").write_text(
         tv.to_json(orient="records", force_ascii=False), encoding="utf-8"
