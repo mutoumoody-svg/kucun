@@ -103,6 +103,14 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       {result_block}
     </div>
   </div>
+<script>
+function toggleInventory(){{
+  var l=document.getElementById("inv-list");
+  var a=document.getElementById("inv-arrow");
+  if(l.style.display==="none"){{l.style.display="";a.textContent="▾";}}
+  else{{l.style.display="none";a.textContent="▸";}}
+}}
+</script>
 </body>
 </html>
 """
@@ -267,17 +275,7 @@ def build_sidebar(active_date: str | None = None) -> str:
         for d in dates:
             cls = ' class="active"' if d == active_date else ""
             parts.append(f'<a href="/history/{d}"{cls}>{d}</a>')
-    parts.append(
-        '</div></div>'
-        '<script>'
-        'function toggleInventory(){'
-        'var l=document.getElementById("inv-list");'
-        'var a=document.getElementById("inv-arrow");'
-        'if(l.style.display==="none"){l.style.display="";a.textContent="▾";}'
-        'else{l.style.display="none";a.textContent="▸";}'
-        '}'
-        '</script>'
-    )
+    parts.append('</div></div>')
 
     return "".join(parts)
 
