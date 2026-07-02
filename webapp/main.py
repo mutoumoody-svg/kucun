@@ -38,6 +38,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import clean_latest  # noqa: E402
 from categorize import STATUS_COLORS  # noqa: E402
+from load_sales import load_monthly_sales, get_sales_months  # noqa: E402
 
 app = FastAPI(title="库存整理工具")
 
@@ -236,12 +237,13 @@ def list_history_dates() -> list[str]:
 
 def build_sidebar(active_date: str | None = None) -> str:
     dates = list_history_dates()
+    links = ['<a href="/sales" style="color:#34d399;font-weight:600">📊 月度销量统计</a>']
     if not dates:
-        return '<div class="empty">还没有整理记录</div>'
-    links = []
-    for d in dates:
-        cls = ' class="active"' if d == active_date else ""
-        links.append(f'<a href="/history/{d}"{cls}>{d}</a>')
+        links.append('<div class="empty">还没有整理记录</div>')
+    else:
+        for d in dates:
+            cls = ' class="active"' if d == active_date else ""
+            links.append(f'<a href="/history/{d}"{cls}>{d}</a>')
     return "".join(links)
 
 
@@ -602,3 +604,208 @@ def download(date: str, name: str = "库存整理.xlsx"):
     if not path.exists():
         raise HTTPException(404, "文件不存在")
     return FileResponse(path, filename=name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# ── 月度销量页面 ────────────────────────────────────────────
+
+@app.get("/sales", response_class=HTMLResponse)
+def sales_page():
+    try:
+        sales, names = load_monthly_sales()
+        months = get_sales_months()
+    except Exception as e:
+        return HTMLResponse(f"<p>读取销量数据失败：{html.escape(str(e))}</p>")
+
+    if not sales:
+        return HTMLResponse("<p>未找到销量数据，请确认 sales_agent/data 路径配置正确。</p>")
+
+    # 从库存注册表补充商品名（优先用库存系统里的名字）
+    try:
+        name_reg = clean_latest.load_name_registry()
+    except Exception:
+        name_reg = {}
+
+    # 构建行数据：sku, name, {month: qty}
+    rows_data = []
+    for sku, mdata in sorted(sales.items()):
+        name = name_reg.get(sku) or names.get(sku, sku)
+        total = sum(mdata.values())
+        rows_data.append({"sku": sku, "name": name, "months": mdata, "total": total})
+
+    # 按总销量降序
+    rows_data.sort(key=lambda r: r["total"], reverse=True)
+
+    # 表格 HTML
+    month_headers = "".join(f"<th onclick=\"sortTable({i+2})\" data-col=\"{i+2}\">{m} <span class=\"sort-icon\">↕</span></th>" for i, m in enumerate(months))
+    month_headers += f"<th onclick=\"sortTable({len(months)+2})\" data-col=\"{len(months)+2}\">合计 <span class=\"sort-icon\">↓</span></th>"
+
+    tbody_rows = []
+    for r in rows_data:
+        cells = f'<td>{html.escape(r["name"])}</td><td>{html.escape(r["sku"])}</td>'
+        row_total = 0
+        for m in months:
+            q = r["months"].get(m, 0)
+            row_total += q
+            cells += f'<td data-val="{q}">{q if q else ""}</td>'
+        cells += f'<td data-val="{row_total}"><strong>{row_total}</strong></td>'
+        tbody_rows.append(f"<tr>{cells}</tr>")
+
+    month_col_count = len(months) + 3  # 名称+编号+各月+合计
+
+    page = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>月度销量统计</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 0; color: #1f2937; background: #fafafa; }}
+  .header {{ background: #1f2937; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }}
+  .header h1 {{ margin: 0; font-size: 18px; flex: 1; }}
+  .header .meta {{ font-size: 13px; color: #9ca3af; }}
+  a.back {{ color: #9ca3af; text-decoration: none; font-size: 13px; }}
+  a.back:hover {{ color: #fff; }}
+  a.dl {{ background: #2563eb; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; }}
+  .toolbar {{ display: flex; gap: 10px; padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; align-items: center; }}
+  .toolbar input {{ border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; font-size: 13px; width: 240px; }}
+  .toolbar .count {{ font-size: 13px; color: #6b7280; margin-left: auto; }}
+  .table-wrap {{ padding: 0 24px 32px; overflow-x: auto; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 12px; }}
+  th {{ background: #1f2937; color: #fff; padding: 8px 12px; text-align: right; white-space: nowrap; cursor: pointer; user-select: none; }}
+  th:first-child, th:nth-child(2) {{ text-align: left; }}
+  th:hover {{ background: #374151; }}
+  th .sort-icon {{ margin-left: 4px; opacity: 0.5; }}
+  th.sorted .sort-icon {{ opacity: 1; }}
+  td {{ border-bottom: 1px solid #e5e7eb; padding: 7px 12px; white-space: nowrap; text-align: right; }}
+  td:first-child, td:nth-child(2) {{ text-align: left; }}
+  tr:hover td {{ background: #f9fafb; }}
+  .no-data {{ text-align: center; color: #9ca3af; padding: 40px; font-size: 14px; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <a class="back" href="/">← 返回首页</a>
+  <h1>月度销量统计（各平台汇总）</h1>
+  <span class="meta">数据月份：{months[0] if months else ""} ~ {months[-1] if months else ""}  · 共 <span id="total-count">{len(rows_data)}</span> 个 SKU</span>
+  <a class="dl" href="/download/sales">下载 Excel</a>
+</div>
+<div class="toolbar">
+  <input type="text" id="search" placeholder="搜索商品名称 / SKU编码…" oninput="applyFilter()">
+  <span class="count">显示 <span id="shown-count">{len(rows_data)}</span> / {len(rows_data)} 条</span>
+</div>
+<div class="table-wrap">
+  <table id="sales-table">
+    <thead>
+      <tr>
+        <th onclick="sortTable(0)" data-col="0">商品名称 <span class="sort-icon">↕</span></th>
+        <th onclick="sortTable(1)" data-col="1">SKU编码 <span class="sort-icon">↕</span></th>
+        {month_headers}
+      </tr>
+    </thead>
+    <tbody id="sales-body">
+      {"".join(tbody_rows)}
+    </tbody>
+  </table>
+  <div id="no-data" class="no-data" style="display:none">没有符合条件的记录</div>
+</div>
+<script>
+const ALL_ROWS = Array.from(document.querySelectorAll('#sales-body tr'));
+let sortCol = {len(months) + 2}, sortAsc = false;
+
+function applyFilter() {{
+  const q = document.getElementById('search').value.toLowerCase();
+  let shown = 0;
+  ALL_ROWS.forEach(tr => {{
+    const cells = tr.querySelectorAll('td');
+    const name = cells[0].textContent.toLowerCase();
+    const sku = cells[1].textContent.toLowerCase();
+    const match = !q || name.includes(q) || sku.includes(q);
+    tr.style.display = match ? '' : 'none';
+    if (match) shown++;
+  }});
+  document.getElementById('shown-count').textContent = shown;
+  document.getElementById('no-data').style.display = shown === 0 ? '' : 'none';
+}}
+
+function sortTable(col) {{
+  if (sortCol === col) {{ sortAsc = !sortAsc; }} else {{ sortCol = col; sortAsc = true; }}
+  document.querySelectorAll('th').forEach((th, i) => {{
+    th.classList.toggle('sorted', i === col);
+    if (i === col) th.querySelector('.sort-icon').textContent = sortAsc ? '↑' : '↓';
+    else th.querySelector('.sort-icon').textContent = '↕';
+  }});
+  const tbody = document.getElementById('sales-body');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {{
+    let av = a.querySelectorAll('td')[col].dataset.val || a.querySelectorAll('td')[col].textContent;
+    let bv = b.querySelectorAll('td')[col].dataset.val || b.querySelectorAll('td')[col].textContent;
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an) && !isNaN(bn)) return sortAsc ? an - bn : bn - an;
+    return sortAsc ? av.localeCompare(bv, 'zh') : bv.localeCompare(av, 'zh');
+  }});
+  rows.forEach(r => tbody.appendChild(r));
+}}
+</script>
+</body>
+</html>"""
+    return HTMLResponse(page)
+
+
+@app.get("/download/sales")
+def download_sales():
+    try:
+        sales, names = load_monthly_sales()
+        months = get_sales_months()
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+    try:
+        name_reg = clean_latest.load_name_registry()
+    except Exception:
+        name_reg = {}
+
+    HEADER_FILL = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    HEADER_FONT = Font(color="FFFFFF", bold=True)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "月度销量"
+
+    headers = ["商品名称", "SKU编码"] + months + ["合计"]
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.fill = HEADER_FILL
+        c.font = HEADER_FONT
+        c.alignment = Alignment(horizontal="center")
+
+    rows_data = []
+    for sku, mdata in sales.items():
+        name = name_reg.get(sku) or names.get(sku, sku)
+        rows_data.append((name, sku, mdata, sum(mdata.values())))
+    rows_data.sort(key=lambda r: r[3], reverse=True)
+
+    for row_idx, (name, sku, mdata, total) in enumerate(rows_data, 2):
+        ws.cell(row=row_idx, column=1, value=name)
+        ws.cell(row=row_idx, column=2, value=sku)
+        for col_idx, m in enumerate(months, 3):
+            ws.cell(row=row_idx, column=col_idx, value=mdata.get(m, 0) or None)
+        ws.cell(row=row_idx, column=len(months) + 3, value=total).font = Font(bold=True)
+
+    from openpyxl.utils import get_column_letter
+    for col in range(1, len(headers) + 1):
+        letter = get_column_letter(col)
+        max_len = max(
+            (len(str(ws.cell(row=r, column=col).value or "")) for r in range(1, ws.max_row + 1)),
+            default=8,
+        )
+        ws.column_dimensions[letter].width = min(max(max_len + 2, 8), 50)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=\"月度销量统计.xlsx\""},
+    )
