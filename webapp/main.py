@@ -589,14 +589,16 @@ def index():
         return _render()
     latest = dates[0]
     # 实时渲染最新期（只跑 clean，不重算周转率/不重写Excel，速度快）
-    # 保证代码更新后新功能立刻出现，不依赖缓存 HTML
     try:
         tables = clean_latest.clean()
         result_html = build_result_html(tables, None)
         save_history(tables["snapshot_date"], result_html, tables["goods"])
         return _render(result_html, active_date=tables["snapshot_date"])
-    except Exception:
+    except Exception as e:
+        import traceback
+        err = html.escape(traceback.format_exc())
         result_html = (HISTORY_DIR / f"{latest}.html").read_text(encoding="utf-8")
+        result_html = f'<div class="error" style="margin-bottom:12px">实时渲染出错（显示缓存版本）：{err}</div>' + result_html
         return _render(result_html, active_date=latest)
 
 
