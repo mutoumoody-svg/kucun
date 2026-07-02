@@ -250,14 +250,16 @@ def build_sidebar(active_date: str | None = None) -> str:
         '</a></div>'
     )
 
-    # 库存整理记录——折叠区
+    # 库存整理记录——JS 折叠区
     parts.append(
-        '<details open>'
-        '<summary style="padding:8px 16px 6px;font-size:12px;color:#9ca3af;'
-        'text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;user-select:none;'
-        'display:flex;align-items:center;justify-content:space-between;list-style:none">'
-        '<span>库存整理记录</span><span style="font-size:10px;opacity:0.6">▾</span>'
-        '</summary>'
+        '<div style="padding:0 0 4px">'
+        '<div onclick="toggleInventory()" id="inv-toggle" style="padding:8px 16px 6px;font-size:12px;'
+        'color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;'
+        'display:flex;align-items:center;justify-content:space-between">'
+        '<span>库存整理记录</span>'
+        '<span id="inv-arrow" style="font-size:10px;opacity:0.6">▾</span>'
+        '</div>'
+        '<div id="inv-list">'
     )
     if not dates:
         parts.append('<div class="empty">还没有整理记录</div>')
@@ -265,7 +267,17 @@ def build_sidebar(active_date: str | None = None) -> str:
         for d in dates:
             cls = ' class="active"' if d == active_date else ""
             parts.append(f'<a href="/history/{d}"{cls}>{d}</a>')
-    parts.append('</details>')
+    parts.append(
+        '</div></div>'
+        '<script>'
+        'function toggleInventory(){'
+        'var l=document.getElementById("inv-list");'
+        'var a=document.getElementById("inv-arrow");'
+        'if(l.style.display==="none"){l.style.display="";a.textContent="▾";}'
+        'else{l.style.display="none";a.textContent="▸";}'
+        '}'
+        '</script>'
+    )
 
     return "".join(parts)
 
@@ -573,11 +585,19 @@ def _build_turnover_excel(snapshot_date: str) -> StreamingResponse:
 @app.get("/", response_class=HTMLResponse)
 def index():
     dates = list_history_dates()
-    if dates:
-        latest = dates[0]
+    if not dates:
+        return _render()
+    latest = dates[0]
+    # 实时渲染最新期（只跑 clean，不重算周转率/不重写Excel，速度快）
+    # 保证代码更新后新功能立刻出现，不依赖缓存 HTML
+    try:
+        tables = clean_latest.clean()
+        result_html = build_result_html(tables, None)
+        save_history(tables["snapshot_date"], result_html, tables["goods"])
+        return _render(result_html, active_date=tables["snapshot_date"])
+    except Exception:
         result_html = (HISTORY_DIR / f"{latest}.html").read_text(encoding="utf-8")
         return _render(result_html, active_date=latest)
-    return _render()
 
 
 @app.get("/history/{date}", response_class=HTMLResponse)
