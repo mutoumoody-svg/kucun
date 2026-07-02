@@ -260,16 +260,17 @@ def build_sidebar(active_date: str | None = None) -> str:
 
     # 库存整理记录——JS 折叠区
     parts.append(
-        '<div style="padding:8px 0 4px">'
-        '<button onclick="toggleInventory()" id="inv-toggle" style="width:100%;background:none;'
-        'border:none;border-top:1px solid #374151;border-bottom:1px solid #374151;'
-        'padding:10px 16px;font-size:12px;color:#9ca3af;text-transform:uppercase;'
-        'letter-spacing:0.5px;cursor:pointer;display:flex;align-items:center;'
-        'justify-content:space-between;text-align:left">'
+        '<div style="padding:8px 12px 4px">'
+        '<button onclick="toggleInventory()" id="inv-toggle" style="width:100%;background:#374151;'
+        'border:none;border-radius:8px;'
+        'padding:14px 16px;font-size:15px;font-weight:700;color:#d1d5db;'
+        'cursor:pointer;display:flex;align-items:center;'
+        'justify-content:space-between;text-align:left;'
+        'box-shadow:0 2px 6px rgba(0,0,0,0.3)">'
         '<span>📁 库存整理记录</span>'
-        '<span id="inv-arrow" style="font-size:12px">▾</span>'
+        '<span id="inv-arrow" style="font-size:14px;opacity:0.7">▾</span>'
         '</button>'
-        '<div id="inv-list">'
+        '<div id="inv-list" style="margin-top:4px">'
     )
     if not dates:
         parts.append('<div class="empty">还没有整理记录</div>')
