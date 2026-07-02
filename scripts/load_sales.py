@@ -7,19 +7,16 @@
 import json
 from pathlib import Path
 
-# 默认路径：与 Inventory 同级的 sales_agent/data 目录
-# 如果不在默认位置，在 raw_data/sales_config.json 里写 {"sales_dir": "绝对路径"}
-_DEFAULT_SALES_DIR = Path(__file__).resolve().parent.parent.parent / "sales_agent" / "data"
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "raw_data" / "sales_config.json"
+# 优先读 raw_data/sales/（用户通过网页上传的文件存这里）
+# 其次找本地同级的 sales_agent/data 目录（本地开发时自动读）
+_RAW_SALES_DIR = Path(__file__).resolve().parent.parent / "raw_data" / "sales"
+_LOCAL_SALES_DIR = Path(__file__).resolve().parent.parent.parent / "sales_agent" / "data"
 
 
 def _get_sales_dir() -> Path:
-    if _CONFIG_PATH.exists():
-        cfg = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-        p = Path(cfg.get("sales_dir", ""))
-        if p.exists():
-            return p
-    return _DEFAULT_SALES_DIR
+    if _RAW_SALES_DIR.exists() and any(_RAW_SALES_DIR.glob("results_??????.json")):
+        return _RAW_SALES_DIR
+    return _LOCAL_SALES_DIR
 
 
 def load_monthly_sales() -> dict[str, dict[str, int]]:

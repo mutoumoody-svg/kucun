@@ -33,6 +33,7 @@ SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 RAW_DIR = PROJECT_ROOT / "raw_data"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 HISTORY_DIR = OUTPUT_DIR / "history"
+SALES_DIR = RAW_DIR / "sales"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -608,6 +609,27 @@ def download(date: str, name: str = "库存整理.xlsx"):
 
 # ── 月度销量页面 ────────────────────────────────────────────
 
+@app.post("/upload/sales", response_class=HTMLResponse)
+async def upload_sales(files: list[UploadFile] = File(...)):
+    SALES_DIR.mkdir(parents=True, exist_ok=True)
+    saved = []
+    errors = []
+    for file in files:
+        name = file.filename
+        if not name.endswith(".json"):
+            errors.append(f"{name}：只支持 .json 文件")
+            continue
+        if not name.startswith("results_") or len(name) != len("results_202606.json"):
+            errors.append(f"{name}：文件名格式应为 results_YYYYMM.json")
+            continue
+        dest = SALES_DIR / name
+        with open(dest, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        saved.append(name)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/sales", status_code=303)
+
+
 @app.get("/sales", response_class=HTMLResponse)
 def sales_page():
     try:
@@ -616,8 +638,26 @@ def sales_page():
     except Exception as e:
         return HTMLResponse(f"<p>读取销量数据失败：{html.escape(str(e))}</p>")
 
+    # 已上传的文件列表
+    uploaded_files = sorted(SALES_DIR.glob("results_??????.json")) if SALES_DIR.exists() else []
+    upload_list = "".join(f"<li>{f.name}</li>" for f in uploaded_files) or "<li style='color:#9ca3af'>暂无文件</li>"
+
     if not sales:
-        return HTMLResponse("<p>未找到销量数据，请确认 sales_agent/data 路径配置正确。</p>")
+        return HTMLResponse(f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>月度销量统计</title>
+        <style>body{{font-family:-apple-system,"Microsoft YaHei",sans-serif;margin:0;background:#fafafa}}
+        .header{{background:#1f2937;color:#fff;padding:16px 24px;display:flex;align-items:center;gap:16px}}
+        .header h1{{margin:0;font-size:18px}} a.back{{color:#9ca3af;text-decoration:none;font-size:13px}}
+        .tip{{padding:32px 24px;color:#6b7280}}</style></head><body>
+        <div class="header"><a class="back" href="/">← 返回首页</a><h1>月度销量统计</h1></div>
+        <div style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <form action="/upload/sales" method="post" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:13px;color:#166534;font-weight:600">上传销量数据：</span>
+            <input type="file" name="files" accept=".json" multiple style="font-size:13px">
+            <button type="submit" style="background:#16a34a;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">上传</button>
+          </form>
+        </div>
+        <div class="tip">还没有销量数据，请上传 results_YYYYMM.json 文件（来自 sales_agent 项目的 data 目录）。</div>
+        </body></html>""")
 
     # 从库存注册表补充商品名（优先用库存系统里的名字）
     try:
@@ -689,6 +729,17 @@ def sales_page():
   <h1>月度销量统计（各平台汇总）</h1>
   <span class="meta">数据月份：{months[0] if months else ""} ~ {months[-1] if months else ""}  · 共 <span id="total-count">{len(rows_data)}</span> 个 SKU</span>
   <a class="dl" href="/download/sales">下载 Excel</a>
+</div>
+<div style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+  <form action="/upload/sales" method="post" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span style="font-size:13px;color:#166534;font-weight:600">上传销量数据：</span>
+    <input type="file" name="files" accept=".json" multiple style="font-size:13px">
+    <button type="submit" style="background:#16a34a;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">上传</button>
+  </form>
+  <details style="font-size:12px;color:#166534;cursor:pointer">
+    <summary>已上传文件（{len(uploaded_files)} 个）</summary>
+    <ul style="margin:4px 0 0 16px;padding:0">{upload_list}</ul>
+  </details>
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="搜索商品名称 / SKU编码…" oninput="applyFilter()">
