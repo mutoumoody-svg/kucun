@@ -1,0 +1,33 @@
+name: 自动部署到服务器
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 把代码文件推送到服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "."
+          target: "/opt/kucun"
+          rm: false
+          exclude: ".git,output,raw_data,webapp/venv,webapp/__pycache__,**/*.pyc,**/*.log"
+
+      - name: 重启服务
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            sudo systemctl restart kucun-webapp
+            echo "✅ 部署完成"
