@@ -145,9 +145,9 @@ TURNOVER_PAGE_TEMPLATE = """<!DOCTYPE html>
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="搜索商品名称 / 编号…" oninput="applyFilter()">
-  <select id="brand-filter" onchange="applyFilter()">
-    <option value="">全部品牌</option>
-    {brand_options}
+  <select id="cat-filter" onchange="applyFilter()">
+    <option value="">全部分类</option>
+    {cat_options}
   </select>
   <select id="status-filter" onchange="applyFilter()">
     <option value="">全部状态</option>
@@ -165,7 +165,7 @@ TURNOVER_PAGE_TEMPLATE = """<!DOCTYPE html>
       <tr>
         <th onclick="sortTable(0)" data-col="0">货品名称 <span class="sort-icon">↕</span></th>
         <th onclick="sortTable(1)" data-col="1">货品编号 <span class="sort-icon">↕</span></th>
-        <th onclick="sortTable(2)" data-col="2">品牌 <span class="sort-icon">↕</span></th>
+        <th onclick="sortTable(2)" data-col="2">页面分类 <span class="sort-icon">↕</span></th>
         <th onclick="sortTable(3)" data-col="3">当前库存 <span class="sort-icon">↕</span></th>
         <th onclick="sortTable(4)" data-col="4">周转月数 <span class="sort-icon">↕</span></th>
         <th onclick="sortTable(5)" data-col="5">库存状态 <span class="sort-icon">↕</span></th>
@@ -184,17 +184,17 @@ let sortCol = 4, sortAsc = true;
 
 function applyFilter() {{
   const q = document.getElementById('search').value.toLowerCase();
-  const brand = document.getElementById('brand-filter').value;
+  const catFilter = document.getElementById('cat-filter').value;
   const status = document.getElementById('status-filter').value;
   let shown = 0;
   ALL_ROWS.forEach(tr => {{
     const cells = tr.querySelectorAll('td');
     const name = cells[0].textContent.toLowerCase();
     const sku = cells[1].textContent.toLowerCase();
-    const b = cells[2].textContent;
     const s = cells[5].textContent;
+    const cat = cells[2].textContent;
     const match = (!q || name.includes(q) || sku.includes(q))
-                && (!brand || b === brand)
+                && (!catFilter || cat === catFilter)
                 && (!status || s === status);
     tr.style.display = match ? '' : 'none';
     if (match) shown++;
@@ -411,10 +411,11 @@ def build_result_html(tables: dict, entry: tuple | None) -> str:
 
 def _save_turnover_json(snapshot_date: str, goods: pd.DataFrame) -> None:
     """把周转数据存成 JSON，供周转率详情页使用"""
-    cols = [c for c in ["货品名称", "货品编号", "品牌", "汇总", "最新月周转月数", "库存状态", "周转数据月份"] if c in goods.columns]
+    cols = [c for c in ["货品名称", "货品编号", "类型", "品牌", "汇总", "最新月周转月数", "库存状态", "周转数据月份"] if c in goods.columns]
     tv = goods[goods["最新月周转月数"].notna()][cols].copy() if "最新月周转月数" in goods.columns else pd.DataFrame(columns=cols)
     if not tv.empty:
         tv["最新月周转月数"] = tv["最新月周转月数"].apply(lambda x: int(round(x)) if pd.notna(x) else None)
+        tv["页面分类"] = tv["类型"] + "-" + tv["品牌"]
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     (HISTORY_DIR / f"{snapshot_date}_turnover.json").write_text(
         tv.to_json(orient="records", force_ascii=False), encoding="utf-8"
@@ -438,8 +439,12 @@ def _build_turnover_page(snapshot_date: str) -> HTMLResponse:
         raise HTTPException(404, "周转率数据为空")
 
     data_month = records[0].get("周转数据月份", "") if records else ""
-    brands = sorted({r.get("品牌", "") for r in records if r.get("品牌")})
-    brand_options = "".join(f'<option value="{html.escape(b)}">{html.escape(b)}</option>' for b in brands)
+    # 按页面分类排序：商品类在前，包装物料在后；同类内按品牌顺序
+    CAT_ORDER = ["商品-STTOKE", "商品-慕咖", "商品-食品", "商品-周边",
+                 "包装物料-STTOKE", "包装物料-慕咖", "包装物料-食品", "包装物料-未分类"]
+    cats_in_data = {r.get("页面分类", "") for r in records if r.get("页面分类")}
+    ordered_cats = [c for c in CAT_ORDER if c in cats_in_data] + sorted(cats_in_data - set(CAT_ORDER))
+    cat_options = "".join(f'<option value="{html.escape(c)}">{html.escape(c)}</option>' for c in ordered_cats)
 
     status_colors_json = json.dumps(STATUS_COLORS, ensure_ascii=False)
 
@@ -451,7 +456,7 @@ def _build_turnover_page(snapshot_date: str) -> HTMLResponse:
     for r in records:
         name = html.escape(str(r.get("货品名称", "")))
         sku = html.escape(str(r.get("货品编号", "")))
-        brand = html.escape(str(r.get("品牌", "")))
+        cat = html.escape(str(r.get("页面分类", "")))
         qty = r.get("汇总", 0) or 0
         tm = r.get("最新月周转月数")
         tm_display = str(tm) if tm is not None else "—"
@@ -461,7 +466,7 @@ def _build_turnover_page(snapshot_date: str) -> HTMLResponse:
             f'<tr>'
             f'<td>{name}</td>'
             f'<td>{sku}</td>'
-            f'<td>{brand}</td>'
+            f'<td>{cat}</td>'
             f'<td data-val="{qty}">{qty:,}</td>'
             f'<td data-val="{tm_val}">{tm_display}</td>'
             f'<td>{_status_tag(status)}</td>'
@@ -472,7 +477,7 @@ def _build_turnover_page(snapshot_date: str) -> HTMLResponse:
         date=snapshot_date,
         data_month=html.escape(str(data_month)),
         total=len(records),
-        brand_options=brand_options,
+        cat_options=cat_options,
         rows="".join(rows_html),
         status_colors_json=status_colors_json,
     )
@@ -492,7 +497,7 @@ def _build_turnover_excel(snapshot_date: str) -> StreamingResponse:
     ws = wb.active
     ws.title = "库存周转率"
 
-    headers = ["货品名称", "货品编号", "品牌", "当前库存", "周转月数", "库存状态", "周转数据月份"]
+    headers = ["货品名称", "货品编号", "页面分类", "品牌", "当前库存", "周转月数", "库存状态", "周转数据月份"]
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.fill = HEADER_FILL
@@ -508,6 +513,7 @@ def _build_turnover_excel(snapshot_date: str) -> StreamingResponse:
         vals = [
             r.get("货品名称", ""),
             r.get("货品编号", ""),
+            r.get("页面分类", ""),
             r.get("品牌", ""),
             r.get("汇总", 0),
             tm,
