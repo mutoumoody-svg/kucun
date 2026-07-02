@@ -39,7 +39,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import clean_latest  # noqa: E402
 from categorize import STATUS_COLORS  # noqa: E402
-from load_sales import load_monthly_sales, get_sales_months  # noqa: E402
+from load_sales import load_monthly_sales, load_monthly_sales_by_store, get_sales_months  # noqa: E402
 
 app = FastAPI(title="库存整理工具")
 
@@ -678,6 +678,7 @@ async def upload_sales(files: list[UploadFile] = File(...)):
 def sales_page():
     try:
         sales, names = load_monthly_sales()
+        store_data, _ = load_monthly_sales_by_store()
         months = get_sales_months()
     except Exception as e:
         return HTMLResponse(f"<p>读取销量数据失败：{html.escape(str(e))}</p>")
@@ -709,32 +710,36 @@ def sales_page():
     except Exception:
         name_reg = {}
 
-    # 构建行数据：sku, name, {month: qty}
-    rows_data = []
-    for sku, mdata in sorted(sales.items()):
-        name = name_reg.get(sku) or names.get(sku, sku)
-        total = sum(mdata.values())
-        rows_data.append({"sku": sku, "name": name, "months": mdata, "total": total})
+    def _resolve_name(sku):
+        return name_reg.get(sku) or names.get(sku, sku)
 
-    # 按总销量降序
-    rows_data.sort(key=lambda r: r["total"], reverse=True)
+    # 汇总数据构建
+    all_skus = sorted(sales.keys())
+    # store列表排序
+    stores = sorted(store_data.keys())
 
-    # 表格 HTML
-    month_headers = "".join(f"<th onclick=\"sortTable({i+2})\" data-col=\"{i+2}\">{m} <span class=\"sort-icon\">↕</span></th>" for i, m in enumerate(months))
-    month_headers += f"<th onclick=\"sortTable({len(months)+2})\" data-col=\"{len(months)+2}\">合计 <span class=\"sort-icon\">↓</span></th>"
+    # 把所有数据序列化为 JS 用的 JSON
+    # nameMap: {sku: name}
+    name_map_js = {sku: _resolve_name(sku) for sku in all_skus}
+    # 所有店铺中出现的sku
+    store_skus: dict[str, list[str]] = {}
+    for s in stores:
+        store_skus[s] = sorted(store_data[s].keys())
 
-    tbody_rows = []
-    for r in rows_data:
-        cells = f'<td>{html.escape(r["name"])}</td><td>{html.escape(r["sku"])}</td>'
-        row_total = 0
-        for m in months:
-            q = r["months"].get(m, 0)
-            row_total += q
-            cells += f'<td data-val="{q}">{q if q else ""}</td>'
-        cells += f'<td data-val="{row_total}"><strong>{row_total}</strong></td>'
-        tbody_rows.append(f"<tr>{cells}</tr>")
+    # JS数据
+    import json as _json
+    js_months = _json.dumps(months, ensure_ascii=False)
+    js_name_map = _json.dumps(name_map_js, ensure_ascii=False)
+    js_all_data = _json.dumps(sales, ensure_ascii=False)
+    js_store_data = _json.dumps(store_data, ensure_ascii=False)
+    js_stores = _json.dumps(stores, ensure_ascii=False)
 
-    month_col_count = len(months) + 3  # 名称+编号+各月+合计
+    # tab按钮 HTML（纯展示用，JS控制激活态）
+    tab_all = '<button class="tab-btn active" onclick="switchTab(\'__all__\', this)">全平台汇总</button>'
+    tab_stores = "".join(
+        f'<button class="tab-btn" onclick="switchTab({_json.dumps(s, ensure_ascii=False)}, this)">{html.escape(s)}</button>'
+        for s in stores
+    )
 
     page = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -750,9 +755,13 @@ def sales_page():
   .header .meta {{ font-size: 13px; color: #9ca3af; }}
   a.back {{ color: #9ca3af; text-decoration: none; font-size: 13px; }}
   a.back:hover {{ color: #fff; }}
-  a.dl {{ background: #2563eb; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; }}
-  .toolbar {{ display: flex; gap: 10px; padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; align-items: center; }}
-  .toolbar input {{ border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; font-size: 13px; width: 240px; }}
+  a.dl {{ background: #2563eb; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; white-space: nowrap; }}
+  .tabs {{ background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0 24px; display: flex; gap: 4px; flex-wrap: wrap; overflow-x: auto; }}
+  .tab-btn {{ background: none; border: none; border-bottom: 3px solid transparent; padding: 12px 14px; font-size: 13px; color: #6b7280; cursor: pointer; white-space: nowrap; font-family: inherit; }}
+  .tab-btn:hover {{ color: #1f2937; background: #f9fafb; }}
+  .tab-btn.active {{ color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }}
+  .toolbar {{ display: flex; gap: 10px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; align-items: center; }}
+  .toolbar input {{ border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; font-size: 13px; width: 260px; }}
   .toolbar .count {{ font-size: 13px; color: #6b7280; margin-left: auto; }}
   .table-wrap {{ padding: 0 24px 32px; overflow-x: auto; }}
   table {{ border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 12px; }}
@@ -770,11 +779,11 @@ def sales_page():
 <body>
 <div class="header">
   <a class="back" href="/">← 返回首页</a>
-  <h1>月度销量统计（各平台汇总）</h1>
-  <span class="meta">数据月份：{months[0] if months else ""} ~ {months[-1] if months else ""}  · 共 <span id="total-count">{len(rows_data)}</span> 个 SKU</span>
-  <a class="dl" href="/download/sales">下载 Excel</a>
+  <h1>月度销量统计</h1>
+  <span class="meta" id="header-meta">数据月份：{months[0] if months else ""} ~ {months[-1] if months else ""}</span>
+  <a class="dl" href="/download/sales">下载 Excel（汇总）</a>
 </div>
-<div style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+<div style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:10px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
   <form action="/upload/sales" method="post" enctype="multipart/form-data" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span style="font-size:13px;color:#166534;font-weight:600">上传销量数据：</span>
     <input type="file" name="files" accept=".json" multiple style="font-size:13px">
@@ -785,36 +794,97 @@ def sales_page():
     <ul style="margin:4px 0 0 16px;padding:0">{upload_list}</ul>
   </details>
 </div>
+<div class="tabs">
+  {tab_all}
+  {tab_stores}
+</div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="搜索商品名称 / SKU编码…" oninput="applyFilter()">
-  <span class="count">显示 <span id="shown-count">{len(rows_data)}</span> / {len(rows_data)} 条</span>
+  <span class="count">显示 <span id="shown-count">0</span> / <span id="total-count">0</span> 条</span>
 </div>
 <div class="table-wrap">
   <table id="sales-table">
-    <thead>
-      <tr>
-        <th onclick="sortTable(0)" data-col="0">商品名称 <span class="sort-icon">↕</span></th>
-        <th onclick="sortTable(1)" data-col="1">SKU编码 <span class="sort-icon">↕</span></th>
-        {month_headers}
-      </tr>
-    </thead>
-    <tbody id="sales-body">
-      {"".join(tbody_rows)}
-    </tbody>
+    <thead id="sales-head"><tr></tr></thead>
+    <tbody id="sales-body"></tbody>
   </table>
   <div id="no-data" class="no-data" style="display:none">没有符合条件的记录</div>
 </div>
 <script>
-const ALL_ROWS = Array.from(document.querySelectorAll('#sales-body tr'));
-let sortCol = {len(months) + 2}, sortAsc = false;
+const MONTHS = {js_months};
+const NAME_MAP = {js_name_map};
+const ALL_DATA = {js_all_data};
+const STORE_DATA = {js_store_data};
+
+let currentData = {{}};
+let sortCol = MONTHS.length + 2;
+let sortAsc = false;
+let filterQ = '';
+
+function getSourceData(tab) {{
+  if (tab === '__all__') return ALL_DATA;
+  return STORE_DATA[tab] || {{}};
+}}
+
+function buildRows(srcData) {{
+  const rows = [];
+  for (const sku of Object.keys(srcData)) {{
+    const mdata = srcData[sku];
+    const name = NAME_MAP[sku] || sku;
+    const total = Object.values(mdata).reduce((a, b) => a + b, 0);
+    rows.push({{ sku, name, mdata, total }});
+  }}
+  rows.sort((a, b) => b.total - a.total);
+  return rows;
+}}
+
+function renderTable(tab) {{
+  const src = getSourceData(tab);
+  const rows = buildRows(src);
+
+  // build header
+  const thead = document.getElementById('sales-head');
+  let hhtml = '<tr>';
+  hhtml += '<th onclick="doSort(0)" data-col="0">商品名称 <span class="sort-icon">↕</span></th>';
+  hhtml += '<th onclick="doSort(1)" data-col="1">SKU编码 <span class="sort-icon">↕</span></th>';
+  MONTHS.forEach((m, i) => {{
+    hhtml += `<th onclick="doSort(${{i+2}})" data-col="${{i+2}}">${{m}} <span class="sort-icon">↕</span></th>`;
+  }});
+  hhtml += `<th onclick="doSort(${{MONTHS.length+2}})" data-col="${{MONTHS.length+2}}" class="sorted">合计 <span class="sort-icon">↓</span></th>`;
+  hhtml += '</tr>';
+  thead.innerHTML = hhtml;
+
+  // build body
+  const tbody = document.getElementById('sales-body');
+  let bhtml = '';
+  for (const r of rows) {{
+    let cells = `<td>${{escHtml(r.name)}}</td><td>${{escHtml(r.sku)}}</td>`;
+    let rowTotal = 0;
+    for (const m of MONTHS) {{
+      const q = r.mdata[m] || 0;
+      rowTotal += q;
+      cells += `<td data-val="${{q}}">${{q || ''}}</td>`;
+    }}
+    cells += `<td data-val="${{rowTotal}}"><strong>${{rowTotal}}</strong></td>`;
+    bhtml += `<tr data-name="${{escAttr(r.name)}}" data-sku="${{escAttr(r.sku)}}">${{cells}}</tr>`;
+  }}
+  tbody.innerHTML = bhtml;
+
+  sortCol = MONTHS.length + 2;
+  sortAsc = false;
+  document.getElementById('total-count').textContent = rows.length;
+  applyFilter();
+}}
+
+function escHtml(s) {{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+function escAttr(s) {{ return s.replace(/"/g,'&quot;'); }}
 
 function applyFilter() {{
   const q = document.getElementById('search').value.toLowerCase();
+  const rows = document.querySelectorAll('#sales-body tr');
   let shown = 0;
-  ALL_ROWS.forEach(tr => {{
-    const cells = tr.querySelectorAll('td');
-    const name = cells[0].textContent.toLowerCase();
-    const sku = cells[1].textContent.toLowerCase();
+  rows.forEach(tr => {{
+    const name = tr.dataset.name.toLowerCase();
+    const sku = tr.dataset.sku.toLowerCase();
     const match = !q || name.includes(q) || sku.includes(q);
     tr.style.display = match ? '' : 'none';
     if (match) shown++;
@@ -823,7 +893,7 @@ function applyFilter() {{
   document.getElementById('no-data').style.display = shown === 0 ? '' : 'none';
 }}
 
-function sortTable(col) {{
+function doSort(col) {{
   if (sortCol === col) {{ sortAsc = !sortAsc; }} else {{ sortCol = col; sortAsc = true; }}
   document.querySelectorAll('th').forEach((th, i) => {{
     th.classList.toggle('sorted', i === col);
@@ -833,14 +903,27 @@ function sortTable(col) {{
   const tbody = document.getElementById('sales-body');
   const rows = Array.from(tbody.querySelectorAll('tr'));
   rows.sort((a, b) => {{
-    let av = a.querySelectorAll('td')[col].dataset.val || a.querySelectorAll('td')[col].textContent;
-    let bv = b.querySelectorAll('td')[col].dataset.val || b.querySelectorAll('td')[col].textContent;
+    const av = a.querySelectorAll('td')[col].dataset.val || a.querySelectorAll('td')[col].textContent;
+    const bv = b.querySelectorAll('td')[col].dataset.val || b.querySelectorAll('td')[col].textContent;
     const an = parseFloat(av), bn = parseFloat(bv);
     if (!isNaN(an) && !isNaN(bn)) return sortAsc ? an - bn : bn - an;
     return sortAsc ? av.localeCompare(bv, 'zh') : bv.localeCompare(av, 'zh');
   }});
   rows.forEach(r => tbody.appendChild(r));
 }}
+
+function switchTab(tab, btn) {{
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('search').value = '';
+  filterQ = '';
+  renderTable(tab);
+  const label = tab === '__all__' ? '全平台汇总' : tab;
+  document.getElementById('header-meta').textContent = '数据月份：{months[0] if months else ""} ~ {months[-1] if months else ""}  ·  ' + label;
+}}
+
+// 初始渲染
+renderTable('__all__');
 </script>
 </body>
 </html>"""

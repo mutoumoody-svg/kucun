@@ -71,6 +71,60 @@ def load_monthly_sales() -> dict[str, dict[str, int]]:
     return result, name_map
 
 
+def load_monthly_sales_by_store() -> tuple[dict, dict]:
+    """
+    返回 (store_data, name_map)
+    store_data: {store_name: {sku: {month: qty}}}
+    name_map: {sku: name}
+    """
+    sales_dir = _get_sales_dir()
+    if not sales_dir.exists():
+        return {}, {}
+
+    store_data: dict[str, dict[str, dict[str, int]]] = {}
+    name_map: dict[str, str] = {}
+
+    for f in sorted(sales_dir.glob("results_??????.json")):
+        ym = f.stem.split("_")[-1]
+        if len(ym) != 6:
+            continue
+        month = f"{ym[:4]}-{ym[4:6]}"
+
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        for store_name, store_val in data.items():
+            sku_rows = store_val.get("sheets", {}).get("SKU汇总", [])
+            for row in sku_rows:
+                if not isinstance(row, dict):
+                    continue
+                sku = str(row.get("SKU编码", "")).strip()
+                if not sku:
+                    continue
+                item_type = str(row.get("类型", ""))
+                if item_type not in ("正品", ""):
+                    continue
+                qty = row.get("销量/赠出次数", 0)
+                try:
+                    qty = int(qty) if qty else 0
+                except (TypeError, ValueError):
+                    qty = 0
+
+                if store_name not in store_data:
+                    store_data[store_name] = {}
+                if sku not in store_data[store_name]:
+                    store_data[store_name][sku] = {}
+                store_data[store_name][sku][month] = store_data[store_name][sku].get(month, 0) + qty
+
+                name = str(row.get("商品名称", "")).strip()
+                if name and sku not in name_map:
+                    name_map[sku] = name
+
+    return store_data, name_map
+
+
 def get_sales_months() -> list[str]:
     """返回有数据的月份列表，升序"""
     sales_dir = _get_sales_dir()
