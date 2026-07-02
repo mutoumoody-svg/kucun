@@ -5,7 +5,14 @@
 只取 "正品" 类型的行（排除退货、赠品）的 销量/赠出次数 字段。
 """
 import json
+import re
 from pathlib import Path
+
+try:
+    import pandas as pd
+    _HAS_PANDAS = True
+except ImportError:
+    _HAS_PANDAS = False
 
 # 优先读 raw_data/sales/（用户通过网页上传的文件存这里）
 # 其次找本地同级的 sales_agent/data 目录（本地开发时自动读）
@@ -123,6 +130,78 @@ def load_monthly_sales_by_store() -> tuple[dict, dict]:
                     name_map[sku] = name
 
     return store_data, name_map
+
+
+def _get_wdt_dir() -> Path:
+    """wdt_summary xlsx 文件所在目录：优先 raw_data/sales/wdt/，其次本地 uploads/"""
+    server_dir = _RAW_SALES_DIR / "wdt"
+    if server_dir.exists() and any(server_dir.glob("??????_wdt_summary.xlsx")):
+        return server_dir
+    return _LOCAL_SALES_DIR / "uploads"
+
+
+def load_distributor_sales() -> tuple[dict, dict, dict]:
+    """
+    从 YYYYMM_wdt_summary.xlsx 读取分销订单数据。
+    返回 (dist_total, dist_by_name, name_map)
+      dist_total:   {sku: {month: qty}}   所有分销商合并
+      dist_by_name: {distributor: {sku: {month: qty}}}  按分销商分组
+      name_map:     {sku: name}
+    """
+    if not _HAS_PANDAS:
+        return {}, {}, {}
+
+    wdt_dir = _get_wdt_dir()
+    if not wdt_dir.exists():
+        return {}, {}, {}
+
+    dist_total: dict[str, dict[str, int]] = {}
+    dist_by_name: dict[str, dict[str, dict[str, int]]] = {}
+    name_map: dict[str, str] = {}
+
+    for f in sorted(wdt_dir.glob("??????_wdt_summary.xlsx")):
+        m = re.match(r"(\d{6})_wdt_summary", f.stem)
+        if not m:
+            continue
+        ym = m.group(1)
+        month = f"{ym[:4]}-{ym[4:6]}"
+
+        try:
+            df = pd.read_excel(f, dtype=str)
+        except Exception:
+            continue
+
+        for _, row in df.iterrows():
+            distributor = str(row.get("分销商", "") or "").strip()
+            if not distributor or distributor in ("nan", "推广"):
+                continue
+            # 去掉 WDT 格式的 id 前缀，只保留名称
+            clean = re.sub(r"^【id:\d+；(.+?)】$", r"\1", distributor)
+
+            sku = str(row.get("商家编码", "") or "").strip()
+            if not sku:
+                continue
+
+            try:
+                qty = int(float(str(row.get("货品数量", 0) or 0)))
+            except (ValueError, TypeError):
+                qty = 0
+            if qty <= 0:
+                continue
+
+            # 合并汇总
+            dist_total.setdefault(sku, {})
+            dist_total[sku][month] = dist_total[sku].get(month, 0) + qty
+
+            # 按分销商
+            dist_by_name.setdefault(clean, {}).setdefault(sku, {})
+            dist_by_name[clean][sku][month] = dist_by_name[clean][sku].get(month, 0) + qty
+
+            name = str(row.get("货品名称", "") or "").strip()
+            if name and sku not in name_map:
+                name_map[sku] = name
+
+    return dist_total, dist_by_name, name_map
 
 
 def get_sales_months() -> list[str]:

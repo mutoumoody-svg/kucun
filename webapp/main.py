@@ -39,7 +39,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import clean_latest  # noqa: E402
 from categorize import STATUS_COLORS  # noqa: E402
-from load_sales import load_monthly_sales, load_monthly_sales_by_store, get_sales_months  # noqa: E402
+from load_sales import load_monthly_sales, load_monthly_sales_by_store, load_distributor_sales, get_sales_months  # noqa: E402
 
 app = FastAPI(title="库存整理工具")
 
@@ -680,7 +680,14 @@ def sales_page():
     try:
         sales, names = load_monthly_sales()
         store_data, _ = load_monthly_sales_by_store()
+        dist_total, dist_by_name, dist_names = load_distributor_sales()
         months = get_sales_months()
+        # 补充分销数据里的月份
+        for sku_data in dist_total.values():
+            for m in sku_data:
+                if m not in months:
+                    months.append(m)
+        months = sorted(set(months))
     except Exception as e:
         return HTMLResponse(f"<p>读取销量数据失败：{html.escape(str(e))}</p>")
 
@@ -712,20 +719,15 @@ def sales_page():
         name_reg = {}
 
     def _resolve_name(sku):
-        return name_reg.get(sku) or names.get(sku, sku)
+        return name_reg.get(sku) or names.get(sku) or dist_names.get(sku, sku)
 
-    # 汇总数据构建
-    all_skus = sorted(sales.keys())
-    # store列表排序
+    # 所有出现过的 SKU
+    all_skus = sorted(set(list(sales.keys()) + list(dist_total.keys())))
     stores = sorted(store_data.keys())
+    distributors = sorted(dist_by_name.keys())
 
-    # 把所有数据序列化为 JS 用的 JSON
-    # nameMap: {sku: name}
+    # nameMap 合并所有来源
     name_map_js = {sku: _resolve_name(sku) for sku in all_skus}
-    # 所有店铺中出现的sku
-    store_skus: dict[str, list[str]] = {}
-    for s in stores:
-        store_skus[s] = sorted(store_data[s].keys())
 
     # JS数据
     import json as _json
@@ -733,14 +735,20 @@ def sales_page():
     js_name_map = _json.dumps(name_map_js, ensure_ascii=False)
     js_all_data = _json.dumps(sales, ensure_ascii=False)
     js_store_data = _json.dumps(store_data, ensure_ascii=False)
-    js_stores = _json.dumps(stores, ensure_ascii=False)
+    js_dist_total = _json.dumps(dist_total, ensure_ascii=False)
+    js_dist_by_name = _json.dumps(dist_by_name, ensure_ascii=False)
 
-    # tab按钮 HTML（纯展示用，JS控制激活态）
-    tab_all = '<button class="tab-btn active" onclick="switchTab(\'__all__\', this)">全平台汇总</button>'
-    tab_stores = "".join(
-        f'<button class="tab-btn" onclick="switchTab({_json.dumps(s, ensure_ascii=False)}, this)">{html.escape(s)}</button>'
-        for s in stores
-    )
+    # tab按钮 HTML — 用 data-tab 属性避免引号冲突
+    def _tab_btn(key: str, label: str, active: bool = False) -> str:
+        esc_key = html.escape(key, quote=True)
+        esc_label = html.escape(label)
+        cls = "tab-btn active" if active else "tab-btn"
+        return f'<button class="{cls}" data-tab="{esc_key}" onclick="switchTab(this.dataset.tab, this)">{esc_label}</button>'
+
+    tab_all = _tab_btn("__all__", "全平台汇总", active=True)
+    tab_stores = "".join(_tab_btn(s, s) for s in stores)
+    tab_dist_total = _tab_btn("__dist__", "分销汇总") if dist_total else ""
+    tab_dist_each = "".join(_tab_btn(f"__dist__{d}", d) for d in distributors)
 
     page = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -798,6 +806,8 @@ def sales_page():
 <div class="tabs">
   {tab_all}
   {tab_stores}
+  {tab_dist_total}
+  {tab_dist_each}
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="搜索商品名称 / SKU编码…" oninput="applyFilter()">
@@ -815,6 +825,8 @@ const MONTHS = {js_months};
 const NAME_MAP = {js_name_map};
 const ALL_DATA = {js_all_data};
 const STORE_DATA = {js_store_data};
+const DIST_TOTAL = {js_dist_total};
+const DIST_BY_NAME = {js_dist_by_name};
 
 let currentData = {{}};
 let sortCol = MONTHS.length + 2;
@@ -823,6 +835,8 @@ let filterQ = '';
 
 function getSourceData(tab) {{
   if (tab === '__all__') return ALL_DATA;
+  if (tab === '__dist__') return DIST_TOTAL;
+  if (tab.startsWith('__dist__')) return DIST_BY_NAME[tab.slice(8)] || {{}};
   return STORE_DATA[tab] || {{}};
 }}
 
