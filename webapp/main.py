@@ -238,14 +238,36 @@ def list_history_dates() -> list[str]:
 
 def build_sidebar(active_date: str | None = None) -> str:
     dates = list_history_dates()
-    links = ['<a href="/sales" style="color:#34d399;font-weight:600">📊 月度销量统计</a>']
+    parts = []
+
+    # 月度销量统计——大按钮
+    parts.append(
+        '<div style="padding:12px 12px 8px">'
+        '<a href="/sales" style="display:block;background:#059669;color:#fff;text-decoration:none;'
+        'border-radius:8px;padding:14px 16px;font-size:15px;font-weight:700;text-align:center;'
+        'letter-spacing:0.5px;box-shadow:0 2px 6px rgba(0,0,0,0.3)">'
+        '📊 月度销量统计'
+        '</a></div>'
+    )
+
+    # 库存整理记录——折叠区
+    parts.append(
+        '<details open>'
+        '<summary style="padding:8px 16px 6px;font-size:12px;color:#9ca3af;'
+        'text-transform:uppercase;letter-spacing:0.5px;cursor:pointer;user-select:none;'
+        'display:flex;align-items:center;justify-content:space-between;list-style:none">'
+        '<span>库存整理记录</span><span style="font-size:10px;opacity:0.6">▾</span>'
+        '</summary>'
+    )
     if not dates:
-        links.append('<div class="empty">还没有整理记录</div>')
+        parts.append('<div class="empty">还没有整理记录</div>')
     else:
         for d in dates:
             cls = ' class="active"' if d == active_date else ""
-            links.append(f'<a href="/history/{d}"{cls}>{d}</a>')
-    return "".join(links)
+            parts.append(f'<a href="/history/{d}"{cls}>{d}</a>')
+    parts.append('</details>')
+
+    return "".join(parts)
 
 
 def _render(result_block: str = "", active_date: str | None = None) -> HTMLResponse:
